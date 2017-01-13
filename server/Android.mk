@@ -69,8 +69,6 @@ LOCAL_SHARED_LIBRARIES := \
         libsysutils \
         libbase \
         libutils \
-
-LOCAL_STATIC_LIBRARIES := \
         libpcap \
 
 LOCAL_SRC_FILES := \
@@ -107,6 +105,7 @@ LOCAL_SRC_FILES := \
         VirtualNetwork.cpp \
         main.cpp \
         oem_iptables_hook.cpp \
+        binder/android/net/UidRange.cpp \
         binder/android/net/metrics/INetdEventListener.aidl \
 
 LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/binder
@@ -151,8 +150,9 @@ LOCAL_SRC_FILES := \
         SockDiagTest.cpp SockDiag.cpp \
         StrictController.cpp StrictControllerTest.cpp \
         UidRanges.cpp \
+        binder/android/net/UidRange.cpp \
 
 LOCAL_MODULE_TAGS := tests
-LOCAL_SHARED_LIBRARIES := liblog libbase libcutils liblogwrap libsysutils
+LOCAL_SHARED_LIBRARIES := libbinder liblog libbase libcutils liblogwrap libsysutils
 include $(BUILD_NATIVE_TEST)
 
