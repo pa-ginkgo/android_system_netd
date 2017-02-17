@@ -31,12 +31,11 @@ public:
     // to get an instance of this class.
     IptablesRestoreController();
 
-    // Called precisely once in netd's lifetime, when the singleton
-    // Controllers object is created.
-    static void installSignalHandler(IptablesRestoreController *singleton);
-
     // Execute |commands| on the given |target|.
     int execute(const IptablesTarget target, const std::string& commands);
+
+    // Execute |commands| on the given |target|, and populate |output| with stdout.
+    int execute(const IptablesTarget target, const std::string& commands, std::string *output);
 
     enum IptablesProcessType {
         IPTABLES_PROCESS,
@@ -50,23 +49,28 @@ public:
 
     virtual ~IptablesRestoreController();
 
+protected:
+    friend class IptablesRestoreControllerTest;
+    pid_t getIpRestorePid(const IptablesProcessType type);
+
 private:
     static IptablesProcess* forkAndExec(const IptablesProcessType type);
 
-    int sendCommand(const IptablesProcessType type, const std::string& command);
+    int sendCommand(const IptablesProcessType type, const std::string& command,
+                    std::string *output);
 
-    static std::string fixCommandString(const std::string& command);
-
-    bool drainAndWaitForAck(const std::unique_ptr<IptablesProcess> &process);
+    static bool drainAndWaitForAck(const std::unique_ptr<IptablesProcess> &process,
+                                   const std::string& command,
+                                   std::string *output);
 
     static void maybeLogStderr(const std::unique_ptr<IptablesProcess> &process,
-                               const char* buf, const ssize_t numBytes);
-
-    std::unique_ptr<IptablesProcess> mIpRestore;
-    std::unique_ptr<IptablesProcess> mIp6Restore;
+                               const std::string& command);
 
     // Guards calls to execute().
     std::mutex mLock;
+
+    std::unique_ptr<IptablesProcess> mIpRestore;
+    std::unique_ptr<IptablesProcess> mIp6Restore;
 };
 
 #endif  // NETD_SERVER_IPTABLES_RESTORE_CONTROLLER_H

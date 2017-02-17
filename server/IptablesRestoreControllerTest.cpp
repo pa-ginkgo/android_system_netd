@@ -15,32 +15,150 @@
  */
 
 #include <string>
+#include <fcntl.h>
+#include <signal.h>
 
 #include <gtest/gtest.h>
+
+#define LOG_TAG "IptablesRestoreControllerTest"
+#include <cutils/log.h>
+#include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 
 #include "IptablesRestoreController.h"
 #include "NetdConstants.h"
 
-class IptablesRestoreControllerHolder {
-public:
-  IptablesRestoreControllerHolder() {
-      IptablesRestoreController::installSignalHandler(&ctrl);
-  }
+using android::base::Join;
+using android::base::StringPrintf;
 
-  IptablesRestoreController ctrl;
+class IptablesRestoreControllerTest : public ::testing::Test {
+public:
+  IptablesRestoreController con;
+
+  pid_t getIpRestorePid(const IptablesRestoreController::IptablesProcessType type) {
+      return con.getIpRestorePid(type);
+  };
+
+  void expectNoIptablesRestoreProcess(pid_t pid) {
+    // We can't readlink /proc/PID/exe, because zombie processes don't have it.
+    // Parse /proc/PID/stat instead.
+    std::string statPath = StringPrintf("/proc/%d/stat", pid);
+    int fd = open(statPath.c_str(), O_RDONLY);
+    if (fd == -1) {
+      // ENOENT means the process is gone (expected).
+      ASSERT_EQ(errno, ENOENT)
+        << "Unexpected error opening " << statPath << ": " << strerror(errno);
+      return;
+    }
+
+    // If the PID exists, it's possible (though very unlikely) that the PID was reused. Check the
+    // binary name as well, to ensure the test isn't flaky.
+    char statBuf[1024];
+    ASSERT_NE(-1, read(fd, statBuf, sizeof(statBuf)))
+        << "Could not read from " << statPath << ": " << strerror(errno);
+    close(fd);
+
+    std::string statString(statBuf);
+    EXPECT_FALSE(statString.find("iptables-restor") || statString.find("ip6tables-resto"))
+      << "Previous iptables-restore pid " << pid << " still alive: " << statString;
+  }
 };
 
-IptablesRestoreControllerHolder holder;
+TEST_F(IptablesRestoreControllerTest, TestBasicCommand) {
+  std::string output;
 
-TEST(IptablesRestoreControllerTest, TestBasicCommand) {
-  IptablesRestoreController& con = holder.ctrl;
-  EXPECT_EQ(0, con.execute(IptablesTarget::V4, "#Test\n"));
-  EXPECT_EQ(0, con.execute(IptablesTarget::V4V6, "#Test\n"));
-  EXPECT_EQ(0, con.execute(IptablesTarget::V6, "#Test\n"));
+  EXPECT_EQ(0, con.execute(IptablesTarget::V4V6, "#Test\n", nullptr));
+
+  pid_t pid4 = getIpRestorePid(IptablesRestoreController::IPTABLES_PROCESS);
+  pid_t pid6 = getIpRestorePid(IptablesRestoreController::IP6TABLES_PROCESS);
+
+  EXPECT_EQ(0, con.execute(IptablesTarget::V6, "#Test\n", nullptr));
+  EXPECT_EQ(0, con.execute(IptablesTarget::V4, "#Test\n", nullptr));
+
+  EXPECT_EQ(0, con.execute(IptablesTarget::V4V6, "#Test\n", &output));
+  EXPECT_EQ("#Test\n#Test\n", output);  // One for IPv4 and one for IPv6.
+
+  // Check the PIDs are the same as they were before. If they're not, the child processes were
+  // restarted, which causes a 30-60ms delay.
+  EXPECT_EQ(pid4, getIpRestorePid(IptablesRestoreController::IPTABLES_PROCESS));
+  EXPECT_EQ(pid6, getIpRestorePid(IptablesRestoreController::IP6TABLES_PROCESS));
 }
 
-TEST(IptablesRestoreControllerTest, TestRestartOnMalformedCommand) {
-  IptablesRestoreController& con = holder.ctrl;
-  EXPECT_EQ(-1, con.execute(IptablesTarget::V4V6, "malformed command\n"));
-  EXPECT_EQ(0, con.execute(IptablesTarget::V4V6, "#Test\n"));
+TEST_F(IptablesRestoreControllerTest, TestRestartOnMalformedCommand) {
+  std::string buffer;
+  for (int i = 0; i < 50; i++) {
+      IptablesTarget target = (IptablesTarget) (i % 3);
+      std::string *output = (i % 2) ? &buffer : nullptr;
+      ASSERT_EQ(-1, con.execute(target, "malformed command\n", output)) <<
+          "Malformed command did not fail at iteration " << i;
+      ASSERT_EQ(0, con.execute(target, "#Test\n", output)) <<
+          "No-op command did not succeed at iteration " << i;
+  }
+}
+
+TEST_F(IptablesRestoreControllerTest, TestRestartOnProcessDeath) {
+  std::string output;
+
+  // Run a command to ensure that the processes are running.
+  EXPECT_EQ(0, con.execute(IptablesTarget::V4V6, "#Test\n", &output));
+
+  pid_t pid4 = getIpRestorePid(IptablesRestoreController::IPTABLES_PROCESS);
+  pid_t pid6 = getIpRestorePid(IptablesRestoreController::IP6TABLES_PROCESS);
+
+  ASSERT_EQ(0, kill(pid4, 0)) << "iptables-restore pid " << pid4 << " does not exist";
+  ASSERT_EQ(0, kill(pid6, 0)) << "ip6tables-restore pid " << pid6 << " does not exist";
+  ASSERT_EQ(0, kill(pid4, SIGTERM)) << "Failed to send SIGTERM to iptables-restore pid " << pid4;
+  ASSERT_EQ(0, kill(pid6, SIGTERM)) << "Failed to send SIGTERM to ip6tables-restore pid " << pid6;
+
+  // Wait 100ms for processes to terminate.
+  TEMP_FAILURE_RETRY(usleep(100 * 1000));
+
+  // Ensure that running a new command properly restarts the processes.
+  EXPECT_EQ(0, con.execute(IptablesTarget::V4V6, "#Test\n", nullptr));
+  EXPECT_NE(pid4, getIpRestorePid(IptablesRestoreController::IPTABLES_PROCESS));
+  EXPECT_NE(pid6, getIpRestorePid(IptablesRestoreController::IP6TABLES_PROCESS));
+
+  // Check there are no zombies.
+  expectNoIptablesRestoreProcess(pid4);
+  expectNoIptablesRestoreProcess(pid6);
+}
+
+TEST_F(IptablesRestoreControllerTest, TestOutput) {
+  const char *chainName = StringPrintf("netd_unit_test_%u", arc4random_uniform(10000)).c_str();
+
+  // Create a chain to list.
+  std::vector<std::string> createCommands = {
+      "*filter",
+      StringPrintf(":%s -", chainName),
+      StringPrintf("-A %s -j RETURN", chainName),
+      "COMMIT",
+      ""
+  };
+  EXPECT_EQ(0, con.execute(V4V6, Join(createCommands, "\n"), nullptr));
+
+  // Expected contents of the chain.
+  std::vector<std::string> expectedLines = {
+      StringPrintf("Chain %s (0 references)", chainName),
+      "target     prot opt source               destination         ",
+      "RETURN     all  --  0.0.0.0/0            0.0.0.0/0           ",
+      StringPrintf("Chain %s (0 references)", chainName),
+      "target     prot opt source               destination         ",
+      "RETURN     all      ::/0                 ::/0                ",
+      ""
+  };
+  std::string expected = Join(expectedLines, "\n");
+
+  // List and delete the chain.
+  std::vector<std::string> listCommands = {
+      "*filter",
+      StringPrintf("-n -L %s", chainName),  // List chain.
+      StringPrintf(":%s -", chainName),     // Flush chain (otherwise we can't delete it).
+      StringPrintf("-X %s", chainName),     // Delete chain.
+      "COMMIT",
+      ""
+  };
+
+  std::string output;
+  EXPECT_EQ(0, con.execute(V4V6, Join(listCommands, "\n"), &output));
+  EXPECT_EQ(expected, output);
 }
