@@ -48,8 +48,10 @@ LOCAL_C_INCLUDES := \
 LOCAL_CLANG := true
 LOCAL_CPPFLAGS := -std=c++11 -Wall -Werror
 
+ifeq ($(BOARD_USES_QCNE),true)
 ifeq ($(BOARD_USES_LIBC_WRAPPER),true)
 LOCAL_CPPFLAGS += -DUSE_WRAPPER
+endif
 endif
 
 LOCAL_MODULE := netd
