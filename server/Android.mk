@@ -85,6 +85,7 @@ LOCAL_SRC_FILES := \
         DnsProxyListener.cpp \
         DummyNetwork.cpp \
         DumpWriter.cpp \
+        EventReporter.cpp \
         FirewallController.cpp \
         FwmarkServer.cpp \
         IdletimerController.cpp \
@@ -112,8 +113,8 @@ LOCAL_SRC_FILES := \
         VirtualNetwork.cpp \
         main.cpp \
         oem_iptables_hook.cpp \
-        binder/android/net/metrics/IDnsEventListener.aidl \
         QtiDataController.cpp \
+        binder/android/net/metrics/INetdEventListener.aidl \
 
 LOCAL_AIDL_INCLUDES := $(LOCAL_PATH)/binder
 
