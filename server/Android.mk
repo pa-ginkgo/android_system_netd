@@ -100,6 +100,7 @@ LOCAL_SRC_FILES := \
         NetlinkManager.cpp \
         Network.cpp \
         NetworkController.cpp \
+        PerfTunerAdapter.cpp \
         PhysicalNetwork.cpp \
         PppController.cpp \
         QtiConnectivityAdapter.cpp \
