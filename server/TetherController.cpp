@@ -536,6 +536,14 @@ int TetherController::setForwardRules(bool add, const char *intIface, const char
         return -1;
     }
 
+    std::string ftpcmd = StringPrintf(
+        "*raw\n"
+        "%s %s -p tcp --dport 21 -i %s -o %s -j CT --helper ftp\n"
+        "COMMIT\n", op, LOCAL_RAW_PREROUTING, intIface, extIface);
+    if (iptablesRestoreFunction(V4, ftpcmd, nullptr) == -1 && add) {
+        return -1;
+    }
+
     std::vector<std::string> v4 = {
         "*filter",
         StringPrintf("%s %s -i %s -o %s -m state --state ESTABLISHED,RELATED -g %s",
