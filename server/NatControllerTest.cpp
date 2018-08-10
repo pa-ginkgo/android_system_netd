@@ -113,7 +113,9 @@ protected:
             "*raw",
             StringPrintf("-A tetherctrl_raw_PREROUTING -p tcp --dport 21 -i %s -j CT --helper ftp",
                          intIf),
-            "COMMIT"
+            StringPrintf("-A tetherctrl_raw_PREROUTING -p tcp --dport 1723 -i %s -j CT --helper pptp",
+                         intIf),
+            "COMMIT",
             "*filter",
             StringPrintf("-A natctrl_FORWARD -i %s -o %s -m state --state"
                          " ESTABLISHED,RELATED -g natctrl_tether_counters", extIf, intIf),
@@ -151,6 +153,8 @@ protected:
         std::vector<std::string> v4Cmds = {
             "*raw",
             StringPrintf("-D tetherctrl_raw_PREROUTING -p tcp --dport 21 -i %s -j CT --helper ftp",
+                         intIf),
+            StringPrintf("-D tetherctrl_raw_PREROUTING -p tcp --dport 1723 -i %s -j CT --helper pptp",
                          intIf),
             "COMMIT",
             "*filter",
