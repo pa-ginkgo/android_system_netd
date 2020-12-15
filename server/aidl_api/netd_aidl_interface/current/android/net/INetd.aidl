@@ -146,9 +146,9 @@ interface INetd {
   const int PERMISSION_INTERNET = 4;
   const int PERMISSION_UPDATE_DEVICE_STATS = 8;
   const int PERMISSION_UNINSTALLED = -1;
-  const int FIREWALL_WHITELIST = 0;
+  const @JavaPassthrough(annotation="@Deprecated") int FIREWALL_WHITELIST = 0;
   const int FIREWALL_ALLOWLIST = 0;
-  const int FIREWALL_BLACKLIST = 1;
+  const @JavaPassthrough(annotation="@Deprecated") int FIREWALL_BLACKLIST = 1;
   const int FIREWALL_DENYLIST = 1;
   const int FIREWALL_RULE_ALLOW = 1;
   const int FIREWALL_RULE_DENY = 2;
@@ -156,6 +156,7 @@ interface INetd {
   const int FIREWALL_CHAIN_DOZABLE = 1;
   const int FIREWALL_CHAIN_STANDBY = 2;
   const int FIREWALL_CHAIN_POWERSAVE = 3;
+  const int FIREWALL_CHAIN_RESTRICTED = 4;
   const String IF_STATE_UP = "up";
   const String IF_STATE_DOWN = "down";
   const String IF_FLAG_BROADCAST = "broadcast";
