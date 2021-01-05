@@ -574,39 +574,39 @@ int NetworkController::setPermissionForNetworks(Permission permission,
     return 0;
 }
 
-int NetworkController::addUsersToNetwork(unsigned netId, const UidRanges& uidRanges) {
-    ScopedWLock lock(mRWLock);
-    Network* network = getNetworkLocked(netId);
+namespace {
+
+int isWrongNetworkForUidRanges(unsigned netId, Network* network) {
     if (!network) {
         ALOGE("no such netId %u", netId);
         return -ENONET;
     }
-    if (network->getType() != Network::VIRTUAL) {
-        ALOGE("cannot add users to non-virtual network with netId %u", netId);
+    const Network::Type networkType = network->getType();
+    if (networkType != Network::VIRTUAL) {
+        ALOGE("cannot add/remove users to/from network type %d with netId %u", networkType, netId);
         return -EINVAL;
     }
-    if (int ret = static_cast<VirtualNetwork*>(network)->addUsers(uidRanges, mProtectableUsers)) {
+    return 0;
+}
+
+}  // namespace
+
+int NetworkController::addUsersToNetwork(unsigned netId, const UidRanges& uidRanges) {
+    ScopedWLock lock(mRWLock);
+    Network* network = getNetworkLocked(netId);
+    if (int ret = isWrongNetworkForUidRanges(netId, network)) {
         return ret;
     }
-    return 0;
+    return network->addUsers(uidRanges, mProtectableUsers);
 }
 
 int NetworkController::removeUsersFromNetwork(unsigned netId, const UidRanges& uidRanges) {
     ScopedWLock lock(mRWLock);
     Network* network = getNetworkLocked(netId);
-    if (!network) {
-        ALOGE("no such netId %u", netId);
-        return -ENONET;
-    }
-    if (network->getType() != Network::VIRTUAL) {
-        ALOGE("cannot remove users from non-virtual network with netId %u", netId);
-        return -EINVAL;
-    }
-    if (int ret = static_cast<VirtualNetwork*>(network)->removeUsers(uidRanges,
-                                                                     mProtectableUsers)) {
+    if (int ret = isWrongNetworkForUidRanges(netId, network)) {
         return ret;
     }
-    return 0;
+    return network->removeUsers(uidRanges, mProtectableUsers);
 }
 
 int NetworkController::addRoute(unsigned netId, const char* interface, const char* destination,
@@ -751,11 +751,10 @@ Network* NetworkController::getNetworkLocked(unsigned netId) const {
 }
 
 VirtualNetwork* NetworkController::getVirtualNetworkForUserLocked(uid_t uid) const {
-    for (const auto& entry : mNetworks) {
-        if (entry.second->getType() == Network::VIRTUAL) {
-            VirtualNetwork* virtualNetwork = static_cast<VirtualNetwork*>(entry.second);
-            if (virtualNetwork->appliesToUser(uid)) {
-                return virtualNetwork;
+    for (const auto& [_, network] : mNetworks) {
+        if (network->getType() == Network::VIRTUAL) {
+            if (network->appliesToUser(uid)) {
+                return static_cast<VirtualNetwork*>(network);
             }
         }
     }
@@ -788,7 +787,7 @@ int NetworkController::checkUserNetworkAccessLocked(uid_t uid, unsigned netId) c
     }
     // If the UID wants to use a VPN, it can do so if and only if the VPN applies to the UID.
     if (network->getType() == Network::VIRTUAL) {
-        return static_cast<VirtualNetwork*>(network)->appliesToUser(uid) ? 0 : -EPERM;
+        return network->appliesToUser(uid) ? 0 : -EPERM;
     }
     // If a VPN applies to the UID, and the VPN is secure (i.e., not bypassable), then the UID can
     // only select a different network if it has the ability to protect its sockets.

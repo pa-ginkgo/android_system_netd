@@ -17,6 +17,7 @@
 #pragma once
 
 #include "NetdConstants.h"
+#include "UidRanges.h"
 
 #include <set>
 #include <string>
@@ -50,12 +51,28 @@ public:
     [[nodiscard]] int clearInterfaces();
 
     std::string toString() const;
+    bool appliesToUser(uid_t uid) const;
+    [[nodiscard]] int addUsers(const UidRanges& uidRanges, const std::set<uid_t>& protectableUsers);
+    [[nodiscard]] int removeUsers(const UidRanges& uidRanges,
+                                  const std::set<uid_t>& protectableUsers);
+    bool isSecure() const;
 
 protected:
-    explicit Network(unsigned netId);
+    explicit Network(unsigned netId, bool mSecure = false);
 
     const unsigned mNetId;
     std::set<std::string> mInterfaces;
+    UidRanges mUidRanges;
+    const bool mSecure;
+
+private:
+    enum Action {
+        REMOVE,
+        ADD,
+    };
+
+    int maybeCloseSockets(Action action, const UidRanges& uidRanges,
+                          const std::set<uid_t>& protectableUsers);
 };
 
 }  // namespace android::net
