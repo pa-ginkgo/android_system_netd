@@ -2287,6 +2287,7 @@ constexpr char FIREWALL_OUTPUT[] = "fw_OUTPUT";
 constexpr char FIREWALL_FORWARD[] = "fw_FORWARD";
 constexpr char FIREWALL_DOZABLE[] = "fw_dozable";
 constexpr char FIREWALL_POWERSAVE[] = "fw_powersave";
+constexpr char FIREWALL_RESTRICTED[] = "fw_restricted";
 constexpr char FIREWALL_STANDBY[] = "fw_standby";
 constexpr char targetReturn[] = "RETURN";
 constexpr char targetDrop[] = "DROP";
@@ -2528,6 +2529,18 @@ TEST_F(NetdBinderTest, FirewallSetUidRule) {
     EXPECT_TRUE(status.isOk()) << status.exceptionMessage();
     expectFirewallUidFirstRuleDoesNotExist(FIREWALL_POWERSAVE, uid);
 
+    // Restricted mode allow
+    status = mNetd->firewallSetUidRule(INetd::FIREWALL_CHAIN_RESTRICTED, uid,
+                                       INetd::FIREWALL_RULE_ALLOW);
+    EXPECT_TRUE(status.isOk()) << status.exceptionMessage();
+    expectFirewallUidFirstRuleExists(FIREWALL_RESTRICTED, uid);
+
+    // Restricted mode deny
+    status = mNetd->firewallSetUidRule(INetd::FIREWALL_CHAIN_RESTRICTED, uid,
+                                       INetd::FIREWALL_RULE_DENY);
+    EXPECT_TRUE(status.isOk()) << status.exceptionMessage();
+    expectFirewallUidFirstRuleDoesNotExist(FIREWALL_RESTRICTED, uid);
+
     // Standby deny
     status = mNetd->firewallSetUidRule(INetd::FIREWALL_CHAIN_STANDBY, uid,
                                        INetd::FIREWALL_RULE_DENY);
@@ -2590,6 +2603,10 @@ TEST_F(NetdBinderTest, FirewallEnableDisableChildChains) {
     EXPECT_TRUE(status.isOk()) << status.exceptionMessage();
     expectFirewallChildChainsLastRuleExists(FIREWALL_POWERSAVE);
 
+    status = mNetd->firewallEnableChildChain(INetd::FIREWALL_CHAIN_RESTRICTED, true);
+    EXPECT_TRUE(status.isOk()) << status.exceptionMessage();
+    expectFirewallChildChainsLastRuleExists(FIREWALL_RESTRICTED);
+
     status = mNetd->firewallEnableChildChain(INetd::FIREWALL_CHAIN_DOZABLE, false);
     EXPECT_TRUE(status.isOk()) << status.exceptionMessage();
     expectFirewallChildChainsLastRuleDoesNotExist(FIREWALL_DOZABLE);
@@ -2601,6 +2618,10 @@ TEST_F(NetdBinderTest, FirewallEnableDisableChildChains) {
     status = mNetd->firewallEnableChildChain(INetd::FIREWALL_CHAIN_POWERSAVE, false);
     EXPECT_TRUE(status.isOk()) << status.exceptionMessage();
     expectFirewallChildChainsLastRuleDoesNotExist(FIREWALL_POWERSAVE);
+
+    status = mNetd->firewallEnableChildChain(INetd::FIREWALL_CHAIN_RESTRICTED, false);
+    EXPECT_TRUE(status.isOk()) << status.exceptionMessage();
+    expectFirewallChildChainsLastRuleDoesNotExist(FIREWALL_RESTRICTED);
 }
 
 namespace {
@@ -3816,7 +3837,7 @@ TEST_F(NetdBinderTest, TestServiceDump) {
              "networkCreatePhysical.*65123.*17"});
 
     EXPECT_TRUE(mNetd->networkAddInterface(TEST_DUMP_NETID, sTun.name()).isOk());
-    testData.push_back({StringPrintf("networkAddInterface(65123, \"%s\")", sTun.name().c_str()),
+    testData.push_back({StringPrintf("networkAddInterface(65123, %s)", sTun.name().c_str()),
                         StringPrintf("networkAddInterface.*65123.*%s", sTun.name().c_str())});
 
     android::net::RouteInfoParcel parcel;
@@ -3826,9 +3847,9 @@ TEST_F(NetdBinderTest, TestServiceDump) {
     parcel.mtu = 1234;
     EXPECT_TRUE(mNetd->networkAddRouteParcel(TEST_DUMP_NETID, parcel).isOk());
     testData.push_back(
-            {StringPrintf("networkAddRouteParcel(65123, \"RouteInfoParcel{destination:"
+            {StringPrintf("networkAddRouteParcel(65123, RouteInfoParcel{destination:"
                           " 2001:db8:dead:beef::/64, ifName: %s, nextHop: fe80::dead:beef,"
-                          " mtu: 1234}\")",
+                          " mtu: 1234})",
                           sTun.name().c_str()),
              "networkAddRouteParcel.*65123.*dead:beef"});
 
