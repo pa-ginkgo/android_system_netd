@@ -22,6 +22,7 @@
 
 #include "NetdConstants.h"
 #include "Permission.h"
+#include "PhysicalNetwork.h"
 #include "android/net/INetd.h"
 #include "netdutils/DumpWriter.h"
 
@@ -86,7 +87,7 @@ public:
     static constexpr int MIN_OEM_ID = 1;
     static constexpr int MAX_OEM_ID = 50;
     static constexpr int LOCAL_NET_ID = INetd::LOCAL_NET_ID;
-    static constexpr int DUMMY_NET_ID = 51;
+    static constexpr int DUMMY_NET_ID = INetd::DUMMY_NET_ID;
 
     // Route mode for modify route
     enum RouteOperation { ROUTE_ADD, ROUTE_UPDATE, ROUTE_REMOVE };
@@ -158,6 +159,7 @@ public:
     bool canProtectLocked(uid_t uid) const;
     bool isVirtualNetworkLocked(unsigned netId) const;
     VirtualNetwork* getVirtualNetworkForUserLocked(uid_t uid) const;
+    PhysicalNetwork* getPhysicalNetworkForUserLocked(uid_t uid) const;
     Permission getPermissionForUserLocked(uid_t uid) const;
     int checkUserNetworkAccessLocked(uid_t uid, unsigned netId) const;
     [[nodiscard]] int createPhysicalNetworkLocked(unsigned netId, Permission permission);
