@@ -889,7 +889,7 @@ Result<void> TetherController::addOffloadRule(const TetherOffloadRuleParcel& rul
             .neigh6 = *(const in6_addr*)rule.destination.data(),
     };
 
-    TetherDownstream6Value value = {
+    Tether6Value value = {
             .oif = static_cast<uint32_t>(rule.outputInterfaceIndex),
             .macHeader = hdr,
             .pmtu = static_cast<uint16_t>(rule.pmtu),
@@ -1267,7 +1267,9 @@ std::string l2ToString(const uint8_t* addr, size_t len) {
 }  // namespace
 
 void TetherController::dumpBpf(DumpWriter& dw) {
-    if (!mBpfDownstream6Map.isValid() || !mBpfStatsMap.isValid() || !mBpfLimitMap.isValid()) {
+    if (!mBpfDownstream6Map.isValid() || !mBpfDownstream64Map.isValid() ||
+        !mBpfDownstream4Map.isValid() || !mBpfUpstream6Map.isValid() ||
+        !mBpfUpstream4Map.isValid() || !mBpfStatsMap.isValid() || !mBpfLimitMap.isValid()) {
         dw.println("BPF not supported");
         return;
     }
@@ -1276,8 +1278,8 @@ void TetherController::dumpBpf(DumpWriter& dw) {
             "BPF downstream ipv6 map: iif(iface) v6addr -> oif(iface) srcmac dstmac ethertype "
             "[pmtu]");
     const auto printDownstream6Map =
-            [&dw](const TetherDownstream6Key& key, const TetherDownstream6Value& value,
-                  const BpfMap<TetherDownstream6Key, TetherDownstream6Value>&) {
+            [&dw](const TetherDownstream6Key& key, const Tether6Value& value,
+                  const BpfMap<TetherDownstream6Key, Tether6Value>&) {
                 char addr[INET6_ADDRSTRLEN];
                 std::string src =
                         l2ToString(value.macHeader.h_source, sizeof(value.macHeader.h_source));
@@ -1303,13 +1305,38 @@ void TetherController::dumpBpf(DumpWriter& dw) {
     }
     dw.decIndent();
 
-    dw.println("BPF stats (downlink): iif(iface) -> packets bytes errors");
+    dw.println("BPF upstream ipv6 map: iif(iface) -> oif(iface) srcmac dstmac ethertype [pmtu]");
+    const auto printUpstream6Map = [&dw](const TetherUpstream6Key& key, const Tether6Value& value,
+                                         const BpfMap<TetherUpstream6Key, Tether6Value>&) {
+        std::string src = l2ToString(value.macHeader.h_source, sizeof(value.macHeader.h_source));
+        std::string dst = l2ToString(value.macHeader.h_dest, sizeof(value.macHeader.h_dest));
+
+        char iifStr[IFNAMSIZ] = "?";
+        char oifStr[IFNAMSIZ] = "?";
+        if_indextoname(key.iif, iifStr);
+        if_indextoname(value.oif, oifStr);
+        dw.println("%u(%s) -> %u(%s) %s %s %04x [%u]", key.iif, iifStr, value.oif, oifStr,
+                   src.c_str(), dst.c_str(), ntohs(value.macHeader.h_proto), value.pmtu);
+
+        return Result<void>();
+    };
+
+    dw.incIndent();
+    ret = mBpfUpstream6Map.iterateWithValue(printUpstream6Map);
+    if (!ret.ok()) {
+        dw.println("Error printing BPF upstream ipv6 map: %s", ret.error().message().c_str());
+    }
+    dw.decIndent();
+
+    dw.println(
+            "BPF stats: iif(iface) -> downlink.packets/bytes/errors uplink.packets/bytes/errors");
     const auto printStatsMap = [&dw](const TetherStatsKey& key, const TetherStatsValue& value,
                                      const BpfMap<TetherStatsKey, TetherStatsValue>&) {
         char iifStr[IFNAMSIZ] = "?";
         if_indextoname(key, iifStr);
-        dw.println("%u(%s) -> %" PRIu64 " %" PRIu64 " %" PRIu64, key, iifStr, value.rxPackets,
-                   value.rxBytes, value.rxErrors);
+        dw.println("%u(%s) -> %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64 " %" PRIu64,
+                   key, iifStr, value.rxPackets, value.rxBytes, value.rxErrors, value.txPackets,
+                   value.txBytes, value.txErrors);
 
         return Result<void>();
     };

@@ -38,7 +38,7 @@ namespace net {
 
 using std::max;
 
-int hardwareAddressType(const std::string& interface) {
+static int doSIOCGIF(const std::string& interface, int opt) {
     base::unique_fd ufd(socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0));
 
     if (ufd < 0) {
@@ -56,9 +56,19 @@ int hardwareAddressType(const std::string& interface) {
     // match a truncated interface if one were to exist.
     strncpy(ifr.ifr_name, interface.c_str(), sizeof(ifr.ifr_name));
 
-    if (ioctl(ufd, SIOCGIFHWADDR, &ifr, sizeof(ifr))) return -errno;
+    if (ioctl(ufd, opt, &ifr, sizeof(ifr))) return -errno;
 
-    return ifr.ifr_hwaddr.sa_family;
+    if (opt == SIOCGIFHWADDR) return ifr.ifr_hwaddr.sa_family;
+    if (opt == SIOCGIFMTU) return ifr.ifr_mtu;
+    return -EINVAL;
+}
+
+int hardwareAddressType(const std::string& interface) {
+    return doSIOCGIF(interface, SIOCGIFHWADDR);
+}
+
+int deviceMTU(const std::string& interface) {
+    return doSIOCGIF(interface, SIOCGIFMTU);
 }
 
 base::Result<bool> isEthernet(const std::string& interface) {
@@ -145,6 +155,64 @@ static int sendAndProcessNetlinkResponse(const void* req, int len) {
     }
 
     return resp.e.error;  // returns 0 on success
+}
+
+int doSetXDP(int ifIndex, int fd, __u32 flags) {
+    const struct {
+        nlmsghdr n;
+        ifinfomsg i;
+        struct {
+            nlattr attr;
+            struct {
+                nlattr attr;
+                int value;
+            } fd;
+            struct {
+                nlattr attr;
+                __u32 value;
+            } flags;
+        } nested;
+    } req = {
+            .n =
+                    {
+                            .nlmsg_len = sizeof(req),
+                            .nlmsg_type = RTM_SETLINK,
+                            .nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK,
+                    },
+            .i =
+                    {
+                            .ifi_family = AF_UNSPEC,
+                            .ifi_index = ifIndex,
+                    },
+            .nested =
+                    {
+                            .attr =
+                                    {
+                                            .nla_len = sizeof(req.nested),
+                                            .nla_type = NLA_F_NESTED | IFLA_XDP,
+                                    },
+                            .fd =
+                                    {
+                                            .attr =
+                                                    {
+                                                            .nla_len = sizeof(req.nested.fd),
+                                                            .nla_type = IFLA_XDP_FD,
+                                                    },
+                                            .value = fd,  // -1 means remove
+                                    },
+                            .flags =
+                                    {
+                                            .attr =
+                                                    {
+                                                            .nla_len = sizeof(req.nested.flags),
+                                                            .nla_type = IFLA_XDP_FLAGS,
+                                                    },
+                                            .value = flags,
+                                    },
+                    },
+    };
+
+    return sendAndProcessNetlinkResponse(&req, sizeof(req));
 }
 
 // ADD:     nlMsgType=RTM_NEWQDISC nlMsgFlags=NLM_F_EXCL|NLM_F_CREATE
