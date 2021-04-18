@@ -74,6 +74,9 @@ std::string Network::toString() const {
         case PHYSICAL:
             repr << "PHYSICAL";
             break;
+        case UNREACHABLE:
+            repr << "UNREACHABLE";
+            break;
         case VIRTUAL:
             repr << "VIRTUAL";
             break;
@@ -92,48 +95,18 @@ bool Network::appliesToUser(uid_t uid) const {
     return mUidRanges.hasUid(uid);
 }
 
-int Network::addUsers(const UidRanges& uidRanges) {
-    // TODO: have a checker ensuring uidRanges does not overlap with itself or the existing one.
-    for (const std::string& interface : mInterfaces) {
-        int ret;
-        if (isVirtual()) {
-            ret = RouteController::addUsersToVirtualNetwork(mNetId, interface.c_str(), mSecure,
-                                                            uidRanges);
-        } else if (isPhysical()) {
-            ret = RouteController::addUsersToPhysicalNetwork(mNetId, interface.c_str(), uidRanges);
-        } else {
-            ALOGE("failed to add users. Invalid network type %d, netId %d", getType(), mNetId);
-            return -EINVAL;
-        }
-        if (ret) {
-            ALOGE("failed to add users on interface %s of netId %u", interface.c_str(), mNetId);
-            return ret;
-        }
+bool Network::hasInvalidUidRanges(const UidRanges& uidRanges) const {
+    if (uidRanges.overlapsSelf()) {
+        ALOGE("uid range %s overlaps self", uidRanges.toString().c_str());
+        return true;
     }
-    mUidRanges.add(uidRanges);
-    return 0;
-}
 
-int Network::removeUsers(const UidRanges& uidRanges) {
-    for (const std::string& interface : mInterfaces) {
-        int ret;
-        if (isVirtual()) {
-            ret = RouteController::removeUsersFromVirtualNetwork(mNetId, interface.c_str(), mSecure,
-                                                                 uidRanges);
-        } else if (isPhysical()) {
-            ret = RouteController::removeUsersFromPhysicalNetwork(mNetId, interface.c_str(),
-                                                                  uidRanges);
-        } else {
-            ALOGE("failed to remove users. Invalid network type %d, netId %d", getType(), mNetId);
-            return -EINVAL;
-        }
-        if (ret) {
-            ALOGE("failed to remove users on interface %s of netId %u", interface.c_str(), mNetId);
-            return ret;
-        }
+    if (uidRanges.overlaps(mUidRanges)) {
+        ALOGE("uid range %s overlaps %s", uidRanges.toString().c_str(),
+              mUidRanges.toString().c_str());
+        return true;
     }
-    mUidRanges.remove(uidRanges);
-    return 0;
+    return false;
 }
 
 bool Network::isSecure() const {
