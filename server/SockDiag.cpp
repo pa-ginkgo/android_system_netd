@@ -32,7 +32,6 @@
 #include <cinttypes>
 
 #include <android-base/properties.h>
-#include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <log/log.h>
 #include <netdutils/InternetAddresses.h>
@@ -48,7 +47,6 @@
 
 namespace android {
 
-using android::base::StringPrintf;
 using netdutils::ScopedAddrinfo;
 using netdutils::Stopwatch;
 
@@ -306,7 +304,7 @@ int SockDiag::sockDestroy(uint8_t proto, const inet_diag_msg *msg) {
     return ret;
 }
 
-int SockDiag::destroySockets(uint8_t proto, int family, const char* addrstr, int ifindex) {
+int SockDiag::destroySockets(uint8_t proto, int family, const char *addrstr) {
     if (!hasSocks()) {
         return -EBADFD;
     }
@@ -315,33 +313,28 @@ int SockDiag::destroySockets(uint8_t proto, int family, const char* addrstr, int
         return ret;
     }
 
-    auto destroyAll = [ifindex](uint8_t, const inet_diag_msg* msg) {
-        return ifindex == 0 || ifindex == (int)msg->id.idiag_if;
-    };
+    auto destroyAll = [] (uint8_t, const inet_diag_msg*) { return true; };
 
     return readDiagMsg(proto, destroyAll);
 }
 
-int SockDiag::destroySockets(const char* addrstr, int ifindex) {
+int SockDiag::destroySockets(const char *addrstr) {
     Stopwatch s;
     mSocketsDestroyed = 0;
 
-    std::string where = addrstr;
-    if (ifindex) where += StringPrintf(" ifindex %d", ifindex);
-
-    if (!strchr(addrstr, ':')) {  // inet_ntop never returns something like ::ffff:192.0.2.1
-        if (int ret = destroySockets(IPPROTO_TCP, AF_INET, addrstr, ifindex)) {
-            ALOGE("Failed to destroy IPv4 sockets on %s: %s", where.c_str(), strerror(-ret));
+    if (!strchr(addrstr, ':')) {
+        if (int ret = destroySockets(IPPROTO_TCP, AF_INET, addrstr)) {
+            ALOGE("Failed to destroy IPv4 sockets on %s: %s", addrstr, strerror(-ret));
             return ret;
         }
     }
-    if (int ret = destroySockets(IPPROTO_TCP, AF_INET6, addrstr, ifindex)) {
-        ALOGE("Failed to destroy IPv6 sockets on %s: %s", where.c_str(), strerror(-ret));
+    if (int ret = destroySockets(IPPROTO_TCP, AF_INET6, addrstr)) {
+        ALOGE("Failed to destroy IPv6 sockets on %s: %s", addrstr, strerror(-ret));
         return ret;
     }
 
     if (mSocketsDestroyed > 0) {
-        ALOGI("Destroyed %d sockets on %s in %" PRId64 "us", mSocketsDestroyed, where.c_str(),
+        ALOGI("Destroyed %d sockets on %s in %" PRId64 "us", mSocketsDestroyed, addrstr,
               s.timeTakenUs());
     }
 
